@@ -14,27 +14,33 @@ This project delivers an edge-deployable, camera-based vision pipeline that auto
 
 ## System Architecture & Processing Pipeline
 
-The detection pipeline processes video frames sequentially to isolate vehicle structural features from uniform pavement:
+## System Architecture & Pipeline
 
-Raw BGR Video Frame
-│
-▼  cv2.cvtColor (COLOR_BGR2GRAY)  [Reduces matrix channels from 3 to 1]
-Grayscale Matrix
-│
-▼  cv2.GaussianBlur (3x3, σ=1)     [Attenuates high-frequency sensor grain]
-Denoised Frame
-│
-▼  cv2.adaptiveThreshold          [Gaussian window 25x25, C=16, Inverted]
-Binary Edge Mask
-│
-▼  cv2.medianBlur (ksize=5)       [Removes isolated salt-and-pepper noise]
-Filtered Mask
-│
-▼  cv2.dilate (3x3 kernel, iter=1) [Closes micro-gaps in vehicle contours]
-Morphological Edge Map
-│
-▼  cv2.countNonZero(crop)         [Evaluates active pixel mass per slot]
-State Evaluation (Free < 970 <= Occupied)
+```mermaid
+flowchart TD
+    Video["📹 Overhead Camera Feed<br/>(carPark.mp4)"] --> Stream["cv2.VideoCapture"]
+    
+    subgraph Preprocessing_Pipeline ["Image Preprocessing Pipeline"]
+        Stream --> Gray["1. cv2.cvtColor<br/>(BGR2GRAY - 66.7% memory reduction)"]
+        Gray --> Blur["2. cv2.GaussianBlur<br/>(3x3 Kernel - Sensor noise suppression)"]
+        Blur --> Adapt["3. cv2.adaptiveThreshold<br/>(Gaussian 25x25, C=16, Inverted)"]
+        Adapt --> Median["4. cv2.medianBlur<br/>(5x5 Window - Eliminates salt & pepper specks)"]
+        Median --> Dilate["5. cv2.dilate<br/>(3x3 Structuring Element - Closes edge gaps)"]
+    end
+
+    subgraph Spatial_Evaluation ["Slot Density Evaluation"]
+        Coords[("📁 CarParkPos<br/>(Pickle coordinate store)")] -. Load (x, y) .-> Crop["NumPy Array Slicing<br/>imgProcess[y:y+height, x:x+width]"]
+        Dilate --> Crop
+        Crop --> Count["cv2.countNonZero(crop)<br/>Active edge pixel summation"]
+        Count --> Decision{"Density Check:<br/>count < 970 ?"}
+    end
+
+    Decision -- "Yes (Flat Asphalt)" --> Free["🟢 Free Space<br/>(Green Box + Increment Counter)"]
+    Decision -- "No (Vehicle Contours)" --> Occ["🔴 Occupied Space<br/>(Red Box)"]
+
+    Free --> Display["🖥️ Live Screen Overlay<br/>(Annotated Feed & Free/Total Counter)"]
+    Occ --> Display
+```
 
 ### Classification Heuristic
 * **Empty Bay:** Flat tarmac exhibits minimal contrast variations under inverted adaptive thresholding ($< 970$ non-zero pixels), registering as **Free** (Green).
@@ -54,15 +60,19 @@ State Evaluation (Free < 970 <= Occupied)
 
 ## Repository Structure
 
-├── ParkingSpacePicker.py   # Interactive GUI to calibrate and persist slot coordinates
-├── main.py                 # Core real-time processing and visualization loop
-├── carParkImg.png          # Reference baseline frame for calibration
-├── carPark.mp4             # Test video feed simulating CCTV surveillance
-├── CarParkPos              # Serialized binary containing coordinate tuples (pickle)
-├── requirements.txt        # Pinned runtime dependencies
-├── .gitignore
-├── LICENSE
-└── README.md
+## Repository Structure
+
+| File / Folder | Role in System |
+| :--- | :--- |
+| `ParkingSpacePicker.py` | Interactive GUI tool used to mark, adjust, and delete slot bounding boxes via mouse callbacks. |
+| `main.py` | Core runtime loop applying the OpenCV transformation pipeline, slot slicing, and live tracking display. |
+| `CarParkPos` | Serialized Python binary file storing the list of slot coordinates `(x, y)` using `pickle`. |
+| `carParkImg.png` | Baseline static calibration image used by `ParkingSpacePicker.py`. |
+| `carPark.mp4` | Video feed used to simulate live surveillance camera footage for real-time testing. |
+| `requirements.txt` | Core package dependencies (`opencv-python`, `numpy`, `cvzone`). |
+| `.gitignore` | Prevents virtual environments (`.venv`), Python cache files, and OS metadata from leaking into Git. |
+| `LICENSE` | Standard open-source MIT License terms. |
+| `README.md` | Complete documentation covering architecture, setup, and engineering decisions. |
 
 
 ---
